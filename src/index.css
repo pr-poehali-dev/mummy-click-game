@@ -267,6 +267,26 @@
     animation: scan 8s linear infinite;
   }
 
+  @keyframes float-up {
+    0% {
+      opacity: 1;
+      transform: translate(-50%, 0) scale(1);
+    }
+    60% {
+      opacity: 1;
+      transform: translate(-50%, -32px) scale(1.15);
+    }
+    100% {
+      opacity: 0;
+      transform: translate(-50%, -56px) scale(0.9);
+    }
+  }
+
+  .animate-float-up {
+    animation: float-up 0.75s ease-out forwards;
+    transform-origin: center;
+  }
+
   .scrollbar-thin::-webkit-scrollbar {
     width: 2px;
   }

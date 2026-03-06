@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Icon from "@/components/ui/icon";
 
 type Section = "home" | "profile" | "pvp" | "clans" | "raids" | "shop" | "prestige";
@@ -64,15 +64,67 @@ function SectionHeader({ title, sub }: { title: string; sub?: string }) {
   );
 }
 
+const IDLE_PER_SEC = 48;
+const TAP_POWER = 12;
+const LEVEL_THRESHOLDS = [0, 10000, 25000, 50000, 90000, 150000];
+
+interface FloatLabel {
+  id: number;
+  x: number;
+  y: number;
+  value: number;
+}
+
 function HomeSection() {
   const [dust, setDust] = useState(14820);
+  const [exp, setExp] = useState(6820);
+  const [level, setLevel] = useState(12);
   const [tapAnim, setTapAnim] = useState(false);
+  const [floats, setFloats] = useState<FloatLabel[]>([]);
+  const [totalTaps, setTotalTaps] = useState(0);
+  const [flashRing, setFlashRing] = useState(false);
+  const floatCounter = useRef(0);
+  const tapRef = useRef<HTMLButtonElement>(null);
 
-  const handleTap = () => {
-    setDust((d) => d + 12);
+  // Idle накопление
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setDust((d) => d + IDLE_PER_SEC);
+      setExp((e) => e + 2);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Уровень вверх
+  useEffect(() => {
+    const next = LEVEL_THRESHOLDS[level - 11] ?? Infinity;
+    if (exp >= next && level < 99) {
+      setLevel((l) => l + 1);
+      setExp(0);
+    }
+  }, [exp, level]);
+
+  const handleTap = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = tapRef.current?.getBoundingClientRect();
+    const x = rect ? e.clientX - rect.left : 70;
+    const y = rect ? e.clientY - rect.top : 70;
+    const bonus = Math.random() < 0.1 ? TAP_POWER * 3 : TAP_POWER;
+    const id = floatCounter.current++;
+
+    setDust((d) => d + bonus);
+    setExp((ex) => ex + 3);
+    setTotalTaps((t) => t + 1);
     setTapAnim(true);
-    setTimeout(() => setTapAnim(false), 120);
-  };
+    setFlashRing(true);
+    setFloats((f) => [...f, { id, x, y, value: bonus }]);
+
+    setTimeout(() => setTapAnim(false), 100);
+    setTimeout(() => setFlashRing(false), 200);
+    setTimeout(() => setFloats((f) => f.filter((fl) => fl.id !== id)), 800);
+  }, []);
+
+  const nextLevelExp = LEVEL_THRESHOLDS[level - 10] ?? 10000;
+  const expPct = Math.min(100, Math.round((exp / nextLevelExp) * 100));
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -82,7 +134,7 @@ function HomeSection() {
         {[
           { label: "Пыль", value: dust.toLocaleString("ru"), icon: "Wind" },
           { label: "Скарабеи", value: "340", icon: "Gem" },
-          { label: "Уровень", value: "12", icon: "TrendingUp" },
+          { label: "Уровень", value: String(level), icon: "TrendingUp" },
         ].map((s) => (
           <div key={s.label} className="glyph-border bg-card p-3 text-center">
             <Icon name={s.icon as "Wind"} size={16} className="text-gold mx-auto mb-1" />
@@ -94,46 +146,68 @@ function HomeSection() {
 
       <div className="relative flex items-center justify-center py-8">
         <div className="absolute inset-0 hieroglyph-pattern rounded-none" />
+
+        {/* Кольцо-вспышка */}
+        <div className={`absolute w-44 h-44 border-2 border-gold/0 transition-all duration-150 ${flashRing ? "border-gold/50 scale-110" : "scale-100"}`} />
+
         <button
+          ref={tapRef}
           onClick={handleTap}
-          className={`tap-button relative z-10 w-40 h-40 border border-gold/40 bg-card flex flex-col items-center justify-center gap-2 transition-all ${tapAnim ? "scale-95" : "hover:border-gold/70"}`}
+          className={`tap-button relative z-10 w-40 h-40 border border-gold/40 bg-card flex flex-col items-center justify-center gap-2 select-none transition-transform duration-75 ${tapAnim ? "scale-90" : "hover:border-gold/70 hover:scale-105"}`}
         >
-          <div className="absolute inset-0 bg-gradient-to-b from-gold/5 to-transparent" />
-          <div className={`text-5xl transition-transform duration-100 ${tapAnim ? "scale-110" : ""}`}>
+          <div className={`absolute inset-0 bg-gradient-to-b from-gold/5 to-transparent transition-opacity duration-100 ${tapAnim ? "opacity-100" : "opacity-40"}`} />
+
+          {/* Летящие числа */}
+          {floats.map((fl) => (
+            <span
+              key={fl.id}
+              className="pointer-events-none absolute font-heading text-sm text-gold z-20 animate-float-up"
+              style={{ left: fl.x, top: fl.y }}
+            >
+              +{fl.value}
+            </span>
+          ))}
+
+          <div className={`text-5xl transition-transform duration-75 ${tapAnim ? "scale-90" : ""}`}>
             🏺
           </div>
           <span className="font-heading text-xs text-gold tracking-widest">ТАПНУТЬ</span>
-          <span className="font-mono text-[10px] text-muted-foreground">+12 ПЫЛИ</span>
+          <span className="font-mono text-[10px] text-muted-foreground">+{TAP_POWER} ПЫЛИ</span>
         </button>
       </div>
 
       <div className="glyph-border bg-card p-4 space-y-3">
         <div className="flex justify-between items-center">
           <span className="font-heading text-xs tracking-widest text-muted-foreground">ПРОГРЕСС</span>
-          <span className="font-mono text-xs text-gold">УР. 12 → 13</span>
+          <span className="font-mono text-xs text-gold">УР. {level} → {level + 1}</span>
         </div>
-        <StatBar label="Опыт" value={6820} max={10000} />
-        <StatBar label="Пыль/сек" value={48} max={100} />
-        <StatBar label="Энергия" value={85} max={100} />
+        <StatBar label="Опыт" value={exp} max={nextLevelExp} />
+        <StatBar label="Пыль/сек" value={IDLE_PER_SEC} max={100} />
+        <StatBar label="Тапов всего" value={totalTaps} max={1000} />
       </div>
 
       <div className="space-y-2">
         <div className="font-heading text-xs text-muted-foreground tracking-widest mb-3">АКТИВНЫЕ КВЕСТЫ</div>
         {[
-          { title: "Разбудить слуг", reward: "500 пыли", progress: 3, total: 5 },
+          { title: "Разбудить слуг", reward: "500 пыли", progress: Math.min(totalTaps, 5), total: 5 },
           { title: "Первый рейд", reward: "1× Скарабей", progress: 0, total: 1 },
           { title: "Создать клан", reward: "Эссенция ×10", progress: 0, total: 1 },
         ].map((q) => (
-          <div key={q.title} className="glyph-border bg-card p-3 flex items-center justify-between gap-3">
+          <div key={q.title} className={`glyph-border bg-card p-3 flex items-center justify-between gap-3 ${q.progress >= q.total ? "border-gold/30" : ""}`}>
             <div className="flex-1 min-w-0">
               <div className="font-body text-sm text-foreground truncate">{q.title}</div>
               <div className="stat-bar mt-1.5">
-                <div className="stat-bar-fill" style={{ width: `${(q.progress / q.total) * 100}%` }} />
+                <div className="stat-bar-fill" style={{ width: `${Math.min(100, (q.progress / q.total) * 100)}%` }} />
               </div>
               <div className="font-mono text-[10px] text-muted-foreground mt-1">{q.progress}/{q.total}</div>
             </div>
-            <div className="text-right shrink-0">
+            <div className="text-right shrink-0 flex flex-col items-end gap-1">
               <div className="font-mono text-xs text-gold">{q.reward}</div>
+              {q.progress >= q.total && (
+                <button className="font-heading text-[9px] bg-gold text-black px-2 py-0.5 tracking-wider hover:opacity-80 transition-opacity">
+                  ЗАБРАТЬ
+                </button>
+              )}
             </div>
           </div>
         ))}
